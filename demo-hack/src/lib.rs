@@ -20,3 +20,8 @@ proc_macro_item_decl! {
     /// A function that always returns 2.
     two_fn! => two_fn_impl
 }
+
+proc_macro_item_decl! {
+    /// Exactly what you wrote.
+    id! => id_impl
+}

@@ -375,3 +375,96 @@ macro_rules! proc_macro_item_impl {
         )+
     };
 }
+
+/// Implement a hacky procedural macro on token streams that expands to items.
+///
+/// ```rust,ignore
+/// proc_macro2_item_impl! {
+///     /// A function that always returns 2.
+///     pub fn two_fn_impl2(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+///         format!("fn {}() -> u8 {{ 2 }}", input)
+///     }
+/// }
+/// ```
+#[macro_export]
+macro_rules! proc_macro2_item_impl {
+    ($(
+        $( #[$attr:meta] )*
+        pub fn $func:ident($input:ident: $in_ty:ty) -> $out_ty:ty
+        $body:block
+    )+) => {
+        $(
+            // Parses an input that looks like:
+            //
+            // ```
+            // #[allow(unused)]
+            // enum ProcMacroHack {
+            //     Input = (stringify!(ARGS), 0).1,
+            // }
+            // ```
+            $( #[$attr] )*
+            #[proc_macro_derive($func)]
+            pub fn $func(input: $in_ty) -> $out_ty {
+                let func_input;
+                {
+                    extern crate proc_macro;
+                    extern crate proc_macro2;
+                    use ::proc_macro2::{TokenStream, TokenTree};
+                    use ::proc_macro2::token_stream::IntoIter;
+                    use ::proc_macro2::Delimiter::{Brace, Parenthesis};
+
+                    let eat = |iter: &mut IntoIter, expected: &str| {
+                        assert_eq!(
+                            Some(expected),
+                            iter.next()
+                                .map(|tok| tok.to_string())
+                                .as_ref().map(|s| s.trim()),
+                        );
+                    };
+                    let descend = |iter: &mut IntoIter, expected| -> TokenStream {
+                        match iter.next() {
+                            Some(TokenTree::Group(group)) => {
+                                assert_eq!(group.delimiter(), expected);
+                                group.stream()
+                            },
+                            _ => panic!(),
+                        }
+                    };
+
+                    let input: TokenStream = input.into();
+                    let mut iter = input.into_iter();
+                    eat(&mut iter, "#");
+                    eat(&mut iter, "allow ( unused )"); // FIXME: WTF? where's the brackets?
+                                                        //  Don't tell me Groups don't render the delimiters?
+                    eat(&mut iter, "enum");
+                    eat(&mut iter, "ProcMacroHack");
+                    {
+                        let mut iter = descend(&mut iter, Brace).into_iter();
+                        eat(&mut iter, "Input");
+                        eat(&mut iter, "=");
+                        {
+                            let mut iter = descend(&mut iter, Parenthesis).into_iter();
+                            eat(&mut iter, "stringify");
+                            eat(&mut iter, "!");
+
+                            func_input = descend(&mut iter, Parenthesis);
+
+                            eat(&mut iter, ",");
+                            eat(&mut iter, "0");
+                            assert!(iter.next().is_none());
+                        }
+                        eat(&mut iter, ".");
+                        eat(&mut iter, "1");
+                        // eat(&mut iter, ","); // FIXME comma pulled a Houdini?
+                        assert!(iter.next().is_none());
+                    }
+                    assert!(iter.next().is_none());
+                }
+
+                fn func($input: $in_ty) -> $out_ty $body
+
+                func(func_input.into()).into()
+            }
+        )+
+    };
+}

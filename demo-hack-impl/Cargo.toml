@@ -11,3 +11,7 @@ proc-macro = true
 
 [dependencies]
 proc-macro-hack = { version = "0.4", path = ".." }
+
+# XXX shouldn't be necessary in user crate
+# XXX "nightly" feature is just for testing that the spans work
+proc-macro2 = { version = "0.3.1", features = ["nightly"] }
